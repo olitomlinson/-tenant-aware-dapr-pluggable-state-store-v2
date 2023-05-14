@@ -371,6 +371,26 @@ public class StateIsolationTests : IClassFixture<PluggableContainer>
 
         Assert.Null(SecondGet);
     }
+
+    [Theory]
+    [MemberData(nameof(OnlyTenantStores))]
+    public async Task ExpireyCanBeExtended(string store)
+    {
+        var key = GetRandomKey();
+        var seedValue = "Chicken";
+        var tenantId = Guid.NewGuid().ToString();
+
+        await _daprClient.SaveStateAsync(store, key, seedValue, metadata: tenantId.AsMetaData(ttl: "5"), cancellationToken: new CancellationTokenSource(5000).Token);
+        var firstGet = await _daprClient.GetStateAsync<string>(store, key, metadata: tenantId.AsMetaData(), cancellationToken: new CancellationTokenSource(5000).Token);
+        Assert.Equal(seedValue,firstGet);
+
+        //extend the timeout for another 10, which goes beyond the original 5 seconds
+        await _daprClient.SaveStateAsync(store, key, seedValue, metadata: tenantId.AsMetaData(ttl: "10"), cancellationToken: new CancellationTokenSource(5000).Token);
+        await Task.Delay(7000);
+        var SecondGet = await _daprClient.GetStateAsync<string>(store, key, metadata: tenantId.AsMetaData(), cancellationToken: new CancellationTokenSource(5000).Token);
+
+        Assert.Equal(seedValue,SecondGet);
+    }
 }
 
 public static class StringExtensions
