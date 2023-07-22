@@ -10,7 +10,7 @@ using Dapr.Client;
 namespace IntegrationTests;
 
 [UsedImplicitly]
-public sealed class PluggableContainer : IAsyncLifetime
+public sealed class TestContainers : IAsyncLifetime
 {
     private static readonly PluggableImage Image = new();
     private readonly IVolume _socketVolume;
@@ -23,7 +23,7 @@ public sealed class PluggableContainer : IAsyncLifetime
     private DaprClient _daprClient;
     private string _dapr_app_id;
 
-    public PluggableContainer()
+    public TestContainers()
     {
         var daprComponentsDirectory = $"{Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)}/DaprComponents";
 
@@ -45,7 +45,7 @@ public sealed class PluggableContainer : IAsyncLifetime
         _socketVolume = new VolumeBuilder().Build();
 
         _daprContainer = new ContainerBuilder()
-            .WithImage("daprio/daprd:nightly-2023-05-12-mariner")
+            .WithImage("daprio/daprd:1.11.2-mariner")
             .WithName($"dapr-{containerSuffix}")
             .WithNetwork(_network)
             .WithNetworkAliases("dapr")

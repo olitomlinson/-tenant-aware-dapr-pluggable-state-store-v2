@@ -23,7 +23,7 @@ services:
     depends_on:
       - db
   pluggableapp-dapr:
-    image: "daprio/daprd:edge"
+    image: "daprio/daprd:1.11.2-mariner"
     deploy:
       restart_policy:
         condition: on-failure

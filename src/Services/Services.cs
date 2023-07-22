@@ -26,11 +26,15 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures, IPlug
     private readonly string _instanceId;
     private readonly ILogger<StateStoreService> _logger;
     private StateStoreInitHelper _stateStoreInitHelper;
-    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, StateStoreInitHelper stateStoreInitHelper)
+    SemaphoreSlim _ensureMetadataTableIsCreated;
+    TaskCompletionSource<string> _registrationTask;
+    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, StateStoreInitHelper stateStoreInitHelper, SemaphoreSlim ensureMetadataTableIsCreated, TaskCompletionSource<string> registrationTask)
     {
         _instanceId = instanceId;
         _logger = logger;
         _stateStoreInitHelper = stateStoreInitHelper;
+        _ensureMetadataTableIsCreated = ensureMetadataTableIsCreated;
+        _registrationTask = registrationTask;
     }
 
 
@@ -128,6 +132,8 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures, IPlug
         {
             _logger.LogInformation("Initialising state store component");
             await _stateStoreInitHelper.InitAsync(request.Properties);
+            _registrationTask.SetResult(_stateStoreInitHelper.GetDatabaseConnectionString());
+            _ensureMetadataTableIsCreated.Release();
             return;
         }
     }

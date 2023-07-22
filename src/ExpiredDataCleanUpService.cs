@@ -1,69 +1,112 @@
+using Helpers;
 using Npgsql;
+using System.Collections.Concurrent;
 
-public class ExpiredDataCleanUpService : IHostedService, IDisposable
+public class ExpiredDataCleanUpService : BackgroundService
 {
+    private ConcurrentDictionary<string, TaskCompletionSource<string>> _registeredComponents;
+    private SemaphoreSlim _sema;
     private int _sequence = 0;
     private readonly ILogger<ExpiredDataCleanUpService> _logger;
-    private Timer? _timer = null;
+    private bool _isMetadataTableEstablished = false;
 
-    private PluggableStateStoreHelpers _helpers = null;
-
-    public ExpiredDataCleanUpService(ILogger<ExpiredDataCleanUpService> logger, PluggableStateStoreHelpers helpers)
+    public ExpiredDataCleanUpService(ILogger<ExpiredDataCleanUpService> logger, SemaphoreSlim semma)
     {
         _logger = logger;
-        _helpers = helpers;
+        _sema = semma;
+        _registeredComponents = new ConcurrentDictionary<string, TaskCompletionSource<string>>();
+    }
+    public TaskCompletionSource<string> TryRegisterStateStore(string instanceId)
+    {
+        var task = new TaskCompletionSource<string>();
+        _registeredComponents.TryAdd(instanceId, task);
+        return task;
     }
 
-    public Task StartAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Expired Data Clean Up Service running.");
+        _logger.LogInformation("Timed Hosted Service running.");
+        
+        _logger.LogDebug("Semaphore waiting...");
+        await _sema.WaitAsync();
+        _logger.LogDebug("Semaphore released...");
 
-        _timer = new Timer(DoWork, null, TimeSpan.Zero,
-            TimeSpan.FromSeconds(5));
+        await DoWork();
 
-        return Task.CompletedTask;
+
+        using PeriodicTimer timer = new(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                await DoWork();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Timed Hosted Service is stopping.");
+        }
     }
 
-    private void DoWork(object? state)
+    private async Task DoWork()
     {
-        var seq = Interlocked.Increment(ref _sequence);
+        _sequence += 1;
 
-        if (_helpers.Count == 0)
-            _logger.LogInformation("Expired Data Clean Up is working. No registered State Stores. Seq: {seq}", seq);
+
+        if(!_registeredComponents.Any())
+        {   
+            _logger.LogInformation("Expired Data Clean Up is working. No registered State Stores. Seq: {seq}", _sequence);
+            return;
+        }
         else
-            foreach (var helper in _helpers) {
-                _logger.LogInformation("Expired Data Clean Up is working. Store Found: {Key}, Seq: {seq}", helper.Key, seq);
+        {
+            _logger.LogDebug($"{_sequence} {_registeredComponents.Count} components found");
+        }
+
+        foreach(var component in _registeredComponents)
+        {
+            if (!component.Value.Task.IsCompleted)
+                _logger.LogDebug($"{_sequence} register component not complete...");
+            else
+                _logger.LogDebug($"{_sequence} registered component '{component.Value.Task.Result}'");
+        }
+
+        foreach(var cs in _registeredComponents
+            .Where(x => x.Value.Task.IsCompletedSuccessfully)
+            .Select(x => x.Value.Task.Result)
+            .Distinct())
+        {
+            _logger.LogDebug(cs);
+            var connection = new NpgsqlConnection(cs);
+            await connection.OpenAsync();  
+
+            if (!_isMetadataTableEstablished)
+            {
+                await CreateTenantMetadataTableIfNotExistsAsync(connection);
+                _isMetadataTableEstablished = true;
             }
 
-        var store = _helpers.FirstOrDefault();
-
-        string sql = 
-            @$"
-            SELECT 
-                tenant_id, schema_id, table_id
-            FROM 
-                ""pluggable_metadata"".""tenant"" 
-            ORDER BY 
-                last_expired_at ASC NULLS FIRST
-            LIMIT 1;
-            ";
-
-        var cs = store.Value?.GetDatabaseConnectionString();
-        if (!string.IsNullOrEmpty(cs))
-        {
-            var connection = new NpgsqlConnection(cs);
-            connection.Open();  
-
             List<string> tenantIdsToDelete = new List<string>();
-            using (var cmd = new NpgsqlCommand(sql, connection, null))
+            string tenantsToCheckForTTLdeletion = 
+                @$"
+                SELECT 
+                    tenant_id, schema_id, table_id
+                FROM 
+                    ""pluggable_metadata"".""tenant"" 
+                ORDER BY 
+                    last_expired_at ASC NULLS FIRST
+                LIMIT 1;
+                ";
+            using (var cmd = new NpgsqlCommand(tenantsToCheckForTTLdeletion, connection, null))
             {
-                using (var reader = cmd.ExecuteReader())
+                using (var reader = await cmd.ExecuteReaderAsync())
                 while (reader.Read())
                 {
                     var schemaAndTenant = reader.GetString(0);
                     var schemaId = reader.GetString(1);
                     var tableId = reader.GetString(2);
-                   
+                    
                     _logger.LogInformation($"tenant : {schemaAndTenant}, schema: {schemaId}, table: {tableId}");
                     tenantIdsToDelete.Add(schemaAndTenant);
                 }
@@ -71,15 +114,45 @@ public class ExpiredDataCleanUpService : IHostedService, IDisposable
 
             foreach(var tenantId in tenantIdsToDelete)
             {
-                var rowsAffected = DeleteFromTable(tenantId, connection);
-                rowsAffected = UpdateLastDelete(tenantId, connection);
+                var rowsAffected = await DeleteExpiredKeysAsync(tenantId, connection);
+                rowsAffected = await UpdateLastExpiredTimestampAsync(tenantId, connection);
             }
 
-            connection.Close();
-        }
+            await connection.CloseAsync();  
+
+        } 
     }
 
-    private int UpdateLastDelete(string schemaAndTable, NpgsqlConnection connection)
+    public async Task CreateTenantMetadataTableIfNotExistsAsync(NpgsqlConnection connection)
+    {
+        var sql = 
+            @$"CREATE SCHEMA IF NOT EXISTS ""pluggable_metadata"" 
+            AUTHORIZATION postgres;
+            
+            CREATE TABLE IF NOT EXISTS ""pluggable_metadata"".""tenant""
+            ( 
+                tenant_id text NOT NULL PRIMARY KEY COLLATE pg_catalog.""default"" 
+                ,schema_id text NOT NULL
+                ,table_id text NOT NULL
+                ,insert_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                ,last_expired_at TIMESTAMP WITH TIME ZONE NULL
+            ) 
+            TABLESPACE pg_default; 
+            ALTER TABLE IF EXISTS ""pluggable_metadata"".""tenant"" OWNER to postgres;
+
+            CREATE INDEX IF NOT EXISTS pluggable_metadata_tenant_last_expired_at ON ""pluggable_metadata"".""tenant"" (last_expired_at ASC NULLS FIRST);
+            ";
+
+        _logger.LogDebug($"{nameof(CreateTenantMetadataTableIfNotExistsAsync)} - {sql}");
+        
+        await using (var cmd = new NpgsqlCommand(sql, connection, null))
+        await cmd.ExecuteNonQueryAsync();
+
+        _logger.LogDebug($"{nameof(CreateTenantMetadataTableIfNotExistsAsync)} - 'pluggable_metadata.tenant' created");
+        
+    }
+
+    private async Task<int> UpdateLastExpiredTimestampAsync(string schemaAndTable, NpgsqlConnection connection)
     {
         var query = @$"
             UPDATE ""pluggable_metadata"".""tenant"" 
@@ -89,18 +162,18 @@ public class ExpiredDataCleanUpService : IHostedService, IDisposable
                 tenant_id = '{schemaAndTable}'
             ;";
 
-            using (var cmd = new NpgsqlCommand(query, connection, null))
-            {
-                return cmd.ExecuteNonQuery();       
-            }
+        using (var cmd = new NpgsqlCommand(query, connection, null))
+        {
+            return await cmd.ExecuteNonQueryAsync();       
+        }
     }
 
-    private int DeleteFromTable(string schemaAndTable, NpgsqlConnection connection)
+    private async Task<int> DeleteExpiredKeysAsync(string schemaAndTable, NpgsqlConnection connection)
     {
         var sql = $"DELETE FROM {schemaAndTable} WHERE expiredate IS NOT NULL AND expiredate < CURRENT_TIMESTAMP";
         using (var cmd = new NpgsqlCommand(sql, connection, null))
         {
-            var rowsAffected = cmd.ExecuteNonQuery();
+            var rowsAffected = await cmd.ExecuteNonQueryAsync();
             _logger.LogInformation($"rows deleted from '{schemaAndTable}': {rowsAffected}");
             return rowsAffected;
         }
@@ -109,13 +182,6 @@ public class ExpiredDataCleanUpService : IHostedService, IDisposable
     {
         _logger.LogInformation("Expired Data Clean Up Service is stopping.");
 
-        _timer?.Change(Timeout.Infinite, 0);
-
         return Task.CompletedTask;
-    }
-
-    public void Dispose()
-    {
-        _timer?.Dispose();
     }
 }

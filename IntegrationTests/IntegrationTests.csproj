@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-      <PackageReference Include="Dapr.Client" Version="1.10.0" />
+      <PackageReference Include="Dapr.Client" Version="1.11.0" />
       <ProjectReference Include="../src/Component.csproj" />
     <PackageReference Include="Testcontainers" Version="3.0.0" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="3.0.0" />

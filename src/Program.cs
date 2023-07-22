@@ -4,9 +4,15 @@ using Dapr.PluggableComponents;
 
 var app = DaprPluggableComponentsApplication.Create();
 
-app.Services.AddSingleton<PluggableStateStoreHelpers>();
+var ensureMetadataTableIsCreated = new SemaphoreSlim(0,1);
 
-app.Services.AddHostedService<ExpiredDataCleanUpService>();
+app.Services.AddSingleton<ExpiredDataCleanUpService>(sp => {
+    return new ExpiredDataCleanUpService(
+        sp.GetService<ILogger<ExpiredDataCleanUpService>>(),
+        ensureMetadataTableIsCreated ); });
+
+app.Services.AddHostedService<ExpiredDataCleanUpService>(sp => {
+    return sp.GetService<ExpiredDataCleanUpService>(); });
 
 app.RegisterService(
     "postgresql-tenant",
@@ -14,13 +20,13 @@ app.RegisterService(
     {
         serviceBuilder.RegisterStateStore(
             context =>
-            {   
+            {                   
                 var logger = context.ServiceProvider.GetRequiredService<ILogger<StateStoreService>>();
-                var helpers = context.ServiceProvider.GetService<PluggableStateStoreHelpers>();
                 var helper = new StateStoreInitHelper(new PgsqlFactory(logger), logger);
-                helpers.Add(context.InstanceId, helper);
-                     
-                return new StateStoreService(context.InstanceId, logger, helper);
+                var expiredDataCleanUpService = context.ServiceProvider.GetService<ExpiredDataCleanUpService>();
+
+                TaskCompletionSource<string> registrationTask = expiredDataCleanUpService.TryRegisterStateStore(context.InstanceId);
+                return new StateStoreService(context.InstanceId, logger, helper, ensureMetadataTableIsCreated, registrationTask);
             });
     });
 app.Run();

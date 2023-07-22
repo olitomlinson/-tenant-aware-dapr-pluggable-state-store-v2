@@ -4,10 +4,9 @@ using Xunit.Abstractions;
 namespace IntegrationTests;
 
 [Collection("Sequence")]  
-public class StateIsolationTests : IClassFixture<PluggableContainer>
+public class StateIsolationTests : IClassFixture<TestContainers>
 {
-    private readonly ITestOutputHelper output;
-    private readonly PluggableContainer _pluggableContainer;
+    private readonly TestContainers _testContainers;
     private readonly DaprClient _daprClient;
     private Func<string> GetRandomKey;
     private static string _pluggableStoreTable = "pluggable-postgres-table";
@@ -26,11 +25,10 @@ public class StateIsolationTests : IClassFixture<PluggableContainer>
         yield return new object[] { _pluggableStoreSchema };
     }
 
-    public StateIsolationTests(PluggableContainer pluggableContainer, ITestOutputHelper output)
+    public StateIsolationTests(TestContainers testContainers, ITestOutputHelper output)
     {
-        _pluggableContainer = pluggableContainer;
-        _daprClient = _pluggableContainer.GetDaprClient();
-        this.output = output;
+        _testContainers = testContainers;
+        _daprClient = _testContainers.GetDaprClient();
         GetRandomKey = () => {  return $"key-{_random.Next(1000000, 9999999)}"; };
     }
 

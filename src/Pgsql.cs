@@ -42,33 +42,33 @@ namespace Helpers
             _connection = connection;
         }
 
-        public async Task CreateTenantMetadataTableIfNotExistsAsync(NpgsqlTransaction transaction = null){
-            var sql = 
-                @$"CREATE SCHEMA IF NOT EXISTS ""pluggable_metadata"" 
-                AUTHORIZATION postgres;
+        // public async Task CreateTenantMetadataTableIfNotExistsAsync(NpgsqlTransaction transaction = null){
+        //     var sql = 
+        //         @$"CREATE SCHEMA IF NOT EXISTS ""pluggable_metadata"" 
+        //         AUTHORIZATION postgres;
                 
-                CREATE TABLE IF NOT EXISTS ""pluggable_metadata"".""tenant""
-                ( 
-                    tenant_id text NOT NULL PRIMARY KEY COLLATE pg_catalog.""default"" 
-                    ,schema_id text NOT NULL
-                    ,table_id text NOT NULL
-                    ,insert_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                    ,last_expired_at TIMESTAMP WITH TIME ZONE NULL
-                ) 
-                TABLESPACE pg_default; 
-                ALTER TABLE IF EXISTS ""pluggable_metadata"".""tenant"" OWNER to postgres;
+        //         CREATE TABLE IF NOT EXISTS ""pluggable_metadata"".""tenant""
+        //         ( 
+        //             tenant_id text NOT NULL PRIMARY KEY COLLATE pg_catalog.""default"" 
+        //             ,schema_id text NOT NULL
+        //             ,table_id text NOT NULL
+        //             ,insert_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        //             ,last_expired_at TIMESTAMP WITH TIME ZONE NULL
+        //         ) 
+        //         TABLESPACE pg_default; 
+        //         ALTER TABLE IF EXISTS ""pluggable_metadata"".""tenant"" OWNER to postgres;
 
-                CREATE INDEX IF NOT EXISTS pluggable_metadata_tenant_last_expired_at ON ""pluggable_metadata"".""tenant"" (last_expired_at ASC NULLS FIRST);
-                ";
+        //         CREATE INDEX IF NOT EXISTS pluggable_metadata_tenant_last_expired_at ON ""pluggable_metadata"".""tenant"" (last_expired_at ASC NULLS FIRST);
+        //         ";
 
-            _logger.LogDebug($"{nameof(CreateTenantMetadataTableIfNotExistsAsync)} - {sql}");
+        //     _logger.LogDebug($"{nameof(CreateTenantMetadataTableIfNotExistsAsync)} - {sql}");
             
-            await using (var cmd = new NpgsqlCommand(sql, _connection, transaction))
-            await cmd.ExecuteNonQueryAsync();
+        //     await using (var cmd = new NpgsqlCommand(sql, _connection, transaction))
+        //     await cmd.ExecuteNonQueryAsync();
 
-            _logger.LogDebug($"{nameof(CreateTenantMetadataTableIfNotExistsAsync)} - Schema & Table Created : {_SafeSchema}");
+        //     _logger.LogDebug($"{nameof(CreateTenantMetadataTableIfNotExistsAsync)} - Schema & Table Created : {_SafeSchema}");
             
-        }
+        // }
 
         public async Task CreateSchemaIfNotExistsAsync(NpgsqlTransaction transaction = null)
         {
@@ -211,7 +211,9 @@ namespace Helpers
 
         private async Task EnsureDatabaseResourcesExistAsync(NpgsqlTransaction transaction = null)
         {
-            await GateAccessToResourceCreationAsync("tenant_metadata", () => CreateTenantMetadataTableIfNotExistsAsync(transaction));
+            // TODO : look at options for moving 'CreateTenantMetadataTableIfNotExistsAsync' into the Background Service, rather than doing it on demand.
+            //await GateAccessToResourceCreationAsync("tenant_metadata", () => CreateTenantMetadataTableIfNotExistsAsync(transaction));
+            
             await GateAccessToResourceCreationAsync($"S:{_schema}", () => CreateSchemaIfNotExistsAsync(transaction));
             await GateAccessToResourceCreationAsync($"T:{_schema}-{_table}", () => CreateTableIfNotExistsAsync(transaction));
         }
