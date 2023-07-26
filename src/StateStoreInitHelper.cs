@@ -23,6 +23,45 @@ namespace Helpers
             TenantAwareDatabaseFactory = (_,_) => { throw new InvalidOperationException("Call 'InitAsync' first"); };
         }
 
+        public StateStoreInitHelper(IPgsqlFactory pgsqlFactory, ILogger logger, IReadOnlyDictionary<string,string> componentMetadataProperties){
+            _pgsqlFactory = pgsqlFactory;
+            _logger = logger;
+            
+            var tenantMode = GetTenantMode(componentMetadataProperties);        
+            
+            _connectionString = GetConnectionString(componentMetadataProperties);
+
+            var defaultSchema = GetDefaultSchemaName(componentMetadataProperties);
+
+            string defaultTable = GetDefaultTableName(componentMetadataProperties);  
+
+            TenantAwareDatabaseFactory = 
+                (operationMetadata, connection) => {
+                    /* 
+                        Why is this a func? 
+                        Schema and Table are not known until a state operation is requested, 
+                        as we rely on a combination on the component metadata and operation metadata,
+                    */
+                    
+                    var tenantId = GetTenantIdFromMetadata(operationMetadata);
+                    
+                    switch(tenantMode){
+                        case SCHEMA_KEYWORD :
+                            return _pgsqlFactory.Create(
+                                schema:             $"{tenantId}-{defaultSchema}", 
+                                table:              defaultTable, 
+                                connection); 
+                        case TABLE_KEYWORD : 
+                            return _pgsqlFactory.Create(
+                                schema:             defaultSchema, 
+                                table:              $"{tenantId}-{defaultTable}",
+                                connection);
+                        default:
+                            throw new Exception("Couldn't instanciate the correct tenant-aware Pgsql wrapper");
+                    }
+                };
+        }
+
         public string GetDatabaseConnectionString()
         {
             if (_connectionString == null)

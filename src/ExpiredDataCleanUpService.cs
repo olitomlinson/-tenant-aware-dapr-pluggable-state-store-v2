@@ -4,35 +4,26 @@ using System.Collections.Concurrent;
 
 public class ExpiredDataCleanUpService : BackgroundService
 {
-    private ConcurrentDictionary<string, TaskCompletionSource<string>> _registeredComponents;
-    private SemaphoreSlim _sema;
+    private ConcurrentDictionary<string, Tuple<string, TaskCompletionSource>> _registeredComponents;
     private int _sequence = 0;
     private readonly ILogger<ExpiredDataCleanUpService> _logger;
     private bool _isMetadataTableEstablished = false;
 
-    public ExpiredDataCleanUpService(ILogger<ExpiredDataCleanUpService> logger, SemaphoreSlim semma)
+    public ExpiredDataCleanUpService(ILogger<ExpiredDataCleanUpService> logger)
     {
         _logger = logger;
-        _sema = semma;
-        _registeredComponents = new ConcurrentDictionary<string, TaskCompletionSource<string>>();
-    }
-    public TaskCompletionSource<string> TryRegisterStateStore(string instanceId)
-    {
-        var task = new TaskCompletionSource<string>();
-        _registeredComponents.TryAdd(instanceId, task);
-        return task;
+        _registeredComponents = new ConcurrentDictionary<string, Tuple<string,TaskCompletionSource>>();
     }
 
+    public void TryRegisterStateStore(string instanceId, string connectionString, TaskCompletionSource allowInit)
+    {
+        _registeredComponents.TryAdd(instanceId, new Tuple<string,TaskCompletionSource>(connectionString, allowInit));
+    }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Timed Hosted Service running.");
-        
-        _logger.LogDebug("Semaphore waiting...");
-        await _sema.WaitAsync();
-        _logger.LogDebug("Semaphore released...");
 
         await DoWork();
-
 
         using PeriodicTimer timer = new(TimeSpan.FromSeconds(5));
 
@@ -53,38 +44,41 @@ public class ExpiredDataCleanUpService : BackgroundService
     {
         _sequence += 1;
 
-
         if(!_registeredComponents.Any())
         {   
-            _logger.LogInformation("Expired Data Clean Up is working. No registered State Stores. Seq: {seq}", _sequence);
+            _logger.LogInformation("No components found yet... Seq: {seq}", _sequence);
             return;
         }
         else
         {
-            _logger.LogDebug($"{_sequence} {_registeredComponents.Count} components found");
+            _logger.LogInformation($"{_registeredComponents.Count} components found. Seq: {_sequence}");
         }
 
         foreach(var component in _registeredComponents)
         {
-            if (!component.Value.Task.IsCompleted)
-                _logger.LogDebug($"{_sequence} register component not complete...");
-            else
-                _logger.LogDebug($"{_sequence} registered component '{component.Value.Task.Result}'");
+            _logger.LogDebug($"component '{component.Key}' initialised. Seq: {_sequence}'");
+            _logger.LogDebug($"component '{component.Key}' connnection string : '{component.Value}. Seq: {_sequence}'");  
         }
 
+
         foreach(var cs in _registeredComponents
-            .Where(x => x.Value.Task.IsCompletedSuccessfully)
-            .Select(x => x.Value.Task.Result)
+            .Select(x => x.Value)
             .Distinct())
         {
-            _logger.LogDebug(cs);
-            var connection = new NpgsqlConnection(cs);
+            var connection = new NpgsqlConnection(cs.Item1);
             await connection.OpenAsync();  
 
             if (!_isMetadataTableEstablished)
             {
                 await CreateTenantMetadataTableIfNotExistsAsync(connection);
+                
                 _isMetadataTableEstablished = true;
+            }
+
+            // ensure all the component inits are unblocked.
+            foreach(var r in _registeredComponents){
+                if (r.Value.Item2.Task.Status == TaskStatus.WaitingForActivation)
+                    r.Value.Item2.SetResult();
             }
 
             List<string> tenantIdsToDelete = new List<string>();

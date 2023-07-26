@@ -5,6 +5,7 @@ metadata:
 spec:
   type: state.postgresql-tenant
   version: v1
+  initTimeout: 5m
   metadata:
   - name: connectionString
     #value: "host=my-release-postgresql.default.svc.cluster.local;port=5432;username=postgres;password=wO2VGDsMKR;database=postgres"

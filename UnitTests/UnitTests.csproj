@@ -15,7 +15,7 @@
     <PackageReference Include="coverlet.collector" Version="3.1.2" />
     <PackageReference Include="NSubstitute" Version="4.4.0" />
     <PackageReference Include="Npgsql" Version="7.0.4" />
-    <PackageReference Include="Dapr.PluggableComponents.AspNetCore" Version="0.1.0" />
+    <PackageReference Include="Dapr.PluggableComponents.AspNetCore" Version="0.2.0-rc01" />
     <ProjectReference Include="../src/Component.csproj" />
   </ItemGroup>
 </Project>

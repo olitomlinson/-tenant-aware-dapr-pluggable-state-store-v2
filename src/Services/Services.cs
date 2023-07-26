@@ -21,20 +21,19 @@ using Google.Rpc;
 
 namespace DaprComponents.Services;
 
-public class StateStoreService : IStateStore, IPluggableComponentFeatures, IPluggableComponentLiveness, ITransactionalStateStore
+public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITransactionalStateStore, IPluggableComponentLiveness
 {
     private readonly string _instanceId;
     private readonly ILogger<StateStoreService> _logger;
     private StateStoreInitHelper _stateStoreInitHelper;
-    SemaphoreSlim _ensureMetadataTableIsCreated;
-    TaskCompletionSource<string> _registrationTask;
-    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, StateStoreInitHelper stateStoreInitHelper, SemaphoreSlim ensureMetadataTableIsCreated, TaskCompletionSource<string> registrationTask)
+    TaskCompletionSource _allowInit;
+
+    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, StateStoreInitHelper stateStoreInitHelper, TaskCompletionSource allowInit)
     {
         _instanceId = instanceId;
         _logger = logger;
         _stateStoreInitHelper = stateStoreInitHelper;
-        _ensureMetadataTableIsCreated = ensureMetadataTableIsCreated;
-        _registrationTask = registrationTask;
+        _allowInit = allowInit;
     }
 
 
@@ -128,14 +127,8 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures, IPlug
 
     public async Task InitAsync(MetadataRequest request, CancellationToken cancellationToken = default)
     {
-        using (_logger.BeginNamedScope("Init", ( "DaprInstanceId", _instanceId)))
-        {
-            _logger.LogInformation("Initialising state store component");
-            await _stateStoreInitHelper.InitAsync(request.Properties);
-            _registrationTask.SetResult(_stateStoreInitHelper.GetDatabaseConnectionString());
-            _ensureMetadataTableIsCreated.Release();
-            return;
-        }
+        await _allowInit.Task;
+        return;
     }
 
     public async Task PingAsync(CancellationToken cancellationToken = default)
