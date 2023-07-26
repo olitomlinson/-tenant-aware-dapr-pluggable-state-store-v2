@@ -1,6 +1,6 @@
-using Helpers;
 using Npgsql;
 using System.Collections.Concurrent;
+
 
 public class ExpiredDataCleanUpService : BackgroundService
 {
@@ -60,28 +60,32 @@ public class ExpiredDataCleanUpService : BackgroundService
             _logger.LogDebug($"component '{component.Key}' connnection string : '{component.Value}. Seq: {_sequence}'");  
         }
 
-
-        foreach(var cs in _registeredComponents
-            .Select(x => x.Value)
-            .Distinct())
+        // create the pluggable metadata tables, and complete any registrations
+        foreach(var component in _registeredComponents)
         {
-            var connection = new NpgsqlConnection(cs.Item1);
+            if (component.Value.Item2.Task.Status == TaskStatus.WaitingForActivation)
+            {   
+                // create the pluggable metadata table
+                var connection = new NpgsqlConnection(component.Value.Item1);
+                await connection.OpenAsync();  
+                await CreateTenantMetadataTableIfNotExistsAsync(connection);
+                await connection.CloseAsync();   
+
+                // Tell the pluggable component to complete its registration Registration
+                component.Value.Item2.SetResult();
+            }
+        }
+
+        // now perform the TTL sweep
+        foreach(var component in _registeredComponents)
+        {
+            var connection = new NpgsqlConnection(component.Value.Item1);
             await connection.OpenAsync();  
 
-            if (!_isMetadataTableEstablished)
-            {
-                await CreateTenantMetadataTableIfNotExistsAsync(connection);
-                
-                _isMetadataTableEstablished = true;
-            }
+            if (component.Value.Item2.Task.Status != TaskStatus.RanToCompletion)
+                continue;
 
-            // ensure all the component inits are unblocked.
-            foreach(var r in _registeredComponents){
-                if (r.Value.Item2.Task.Status == TaskStatus.WaitingForActivation)
-                    r.Value.Item2.SetResult();
-            }
-
-            List<string> tenantIdsToDelete = new List<string>();
+            var tenantIdsToDelete = new List<string>();
             string tenantsToCheckForTTLdeletion = 
                 @$"
                 SELECT 
@@ -113,8 +117,7 @@ public class ExpiredDataCleanUpService : BackgroundService
             }
 
             await connection.CloseAsync();  
-
-        } 
+        }
     }
 
     public async Task CreateTenantMetadataTableIfNotExistsAsync(NpgsqlConnection connection)
@@ -143,7 +146,6 @@ public class ExpiredDataCleanUpService : BackgroundService
         await cmd.ExecuteNonQueryAsync();
 
         _logger.LogDebug($"{nameof(CreateTenantMetadataTableIfNotExistsAsync)} - 'pluggable_metadata.tenant' created");
-        
     }
 
     private async Task<int> UpdateLastExpiredTimestampAsync(string schemaAndTable, NpgsqlConnection connection)

@@ -26,14 +26,13 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
     private readonly string _instanceId;
     private readonly ILogger<StateStoreService> _logger;
     private StateStoreInitHelper _stateStoreInitHelper;
-    TaskCompletionSource _allowInit;
 
-    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, StateStoreInitHelper stateStoreInitHelper, TaskCompletionSource allowInit)
+    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, StateStoreInitHelper stateStoreInitHelper)
     {
         _instanceId = instanceId;
         _logger = logger;
         _stateStoreInitHelper = stateStoreInitHelper;
-        _allowInit = allowInit;
+
     }
 
 
@@ -127,7 +126,6 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
 
     public async Task InitAsync(MetadataRequest request, CancellationToken cancellationToken = default)
     {
-        await _allowInit.Task;
         return;
     }
 

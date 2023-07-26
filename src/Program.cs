@@ -1,8 +1,6 @@
 using DaprComponents.Services;
 using Helpers;
 using Dapr.PluggableComponents;
-using Dapr.PluggableComponents.Components.StateStore;
-using Dapr.PluggableComponents.Components;
 
 const string CONNECTION_STRING_KEYWORD = "connectionString";
 
@@ -27,15 +25,14 @@ app.RegisterService(
 
                 var logger = context.ServiceProvider.GetRequiredService<ILogger<StateStoreService>>();
                 var helper = new StateStoreInitHelper(new PgsqlFactory(logger), logger, context.MetadataRequest.Properties );
-                var expiredDataCleanUpService = context.ServiceProvider.GetService<ExpiredDataCleanUpService>();
+                var expiredDataCleanUpService = context.ServiceProvider.GetRequiredService<ExpiredDataCleanUpService>();
                 
                 if (!context.MetadataRequest.Properties.TryGetValue(CONNECTION_STRING_KEYWORD, out string connectionString))
                     throw new Exception($"Mandatory '{CONNECTION_STRING_KEYWORD}' metadata property not specified'");
                 
-                TaskCompletionSource allowInit = new TaskCompletionSource();
-                expiredDataCleanUpService.TryRegisterStateStore(context.InstanceId, connectionString, allowInit);
+                expiredDataCleanUpService.TryRegisterStateStore(context.InstanceId, connectionString, context.AllowInitToComplete);
                 
-                return new StateStoreService(context.InstanceId, logger, helper, allowInit);
+                return new StateStoreService(context.InstanceId, logger, helper);
             });
     });
 app.Run();

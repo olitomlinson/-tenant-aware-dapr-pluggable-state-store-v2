@@ -91,43 +91,6 @@ namespace Helpers
             return (factory, connection);
         }
 
-        public async Task InitAsync(IReadOnlyDictionary<string,string> componentMetadataProperties){
-            
-            var tenantMode = GetTenantMode(componentMetadataProperties);        
-            
-            _connectionString = GetConnectionString(componentMetadataProperties);
-
-            var defaultSchema = GetDefaultSchemaName(componentMetadataProperties);
-
-            string defaultTable = GetDefaultTableName(componentMetadataProperties);  
-
-            TenantAwareDatabaseFactory = 
-                (operationMetadata, connection) => {
-                    /* 
-                        Why is this a func? 
-                        Schema and Table are not known until a state operation is requested, 
-                        as we rely on a combination on the component metadata and operation metadata,
-                    */
-                    
-                    var tenantId = GetTenantIdFromMetadata(operationMetadata);
-                    
-                    switch(tenantMode){
-                        case SCHEMA_KEYWORD :
-                            return _pgsqlFactory.Create(
-                                schema:             $"{tenantId}-{defaultSchema}", 
-                                table:              defaultTable, 
-                                connection); 
-                        case TABLE_KEYWORD : 
-                            return _pgsqlFactory.Create(
-                                schema:             defaultSchema, 
-                                table:              $"{tenantId}-{defaultTable}",
-                                connection);
-                        default:
-                            throw new Exception("Couldn't instanciate the correct tenant-aware Pgsql wrapper");
-                    }
-                };
-        }
-
         private string GetTenantMode(IReadOnlyDictionary<string,string> properties){
             bool isTenantAware = (properties.TryGetValue(TENANT_KEYWORD, out string tenantTarget));
             if (!isTenantAware)
