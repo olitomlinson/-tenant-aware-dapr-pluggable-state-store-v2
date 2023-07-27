@@ -30,10 +30,7 @@ public class ErrorHandlingTests
     public async Task ConnectionStringIsNotSpecified()
     {
         var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
-
-        var componentMetadata = new Dictionary<string,string>();
-        await h.InitAsync(componentMetadata);
+        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>(), new Dictionary<string,string>());
     }
 
     [TestMethod]
@@ -42,12 +39,11 @@ public class ErrorHandlingTests
     public async Task TenantModeIsNotSpecified()
     {
         var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
 
         var componentMetadata = new Dictionary<string,string>(){
             {"connectionString",    "some-c-string"}
         };
-        await h.InitAsync(componentMetadata);
+        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>(), componentMetadata);
     }
 
     [TestMethod]
@@ -56,13 +52,12 @@ public class ErrorHandlingTests
     public async Task RequestFailsWhenNoTenantIdIsSpecified()
     {
         var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
 
         var componentMetadata = new Dictionary<string,string>(){
             {"connectionString",    "some-c-string"},
-            {"tenant",              "schema"}
-        };
-        await h.InitAsync(componentMetadata);
+            {"tenant",              "schema"}        };
+
+        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>(), componentMetadata);
 
         var operationMetadata = new Dictionary<string, string>();
         h.TenantAwareDatabaseFactory?.Invoke(operationMetadata, null);

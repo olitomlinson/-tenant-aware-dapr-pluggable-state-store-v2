@@ -13,13 +13,10 @@ public class HappyPathTests
     public async Task TenantIdIsPrefixedToDefaultSchemaName()
     {
         var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
-
         var componentMetadata = new Dictionary<string,string>() {
             { "connectionString",   "some-c-string" },
             { "tenant",             "schema"        }};
-
-        await h.InitAsync(componentMetadata);
+        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>(),componentMetadata);
 
         var operationMetadata = new Dictionary<string, string>(){
             { "tenantId", "123"}};
@@ -33,13 +30,11 @@ public class HappyPathTests
     public async Task TenantIdIsPrefixedToCustomSchemaName()
     {
         var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
-
         var componentMetadata = new Dictionary<string,string>() {
         {"connectionString",    "some-c-string" },
         {"tenant",              "schema"        },
         {"schema",              "custom"        }};
-        await h.InitAsync(componentMetadata);
+        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>(),componentMetadata);
 
         var operationMetadata = new Dictionary<string, string>(){
         {"tenantId", "123"}};
@@ -52,13 +47,11 @@ public class HappyPathTests
     public async Task TenantIdIsPrefixedToDefaultTableName()
     {
         var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
-
         var componentMetadata = new Dictionary<string,string>(){
             { "connectionString", "some-c-string"},
             { "tenant", "table"}
         };
-        await h.InitAsync(componentMetadata);
+        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>(), componentMetadata);
 
         var operationMetadata = new Dictionary<string, string>();
         operationMetadata.Add("tenantId", "123");
@@ -71,14 +64,12 @@ public class HappyPathTests
     public async Task TenantIdIsPrefixedToCustomTableName()
     {
         var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
-
         var componentMetadata = new Dictionary<string,string>(){
             {"connectionString", "some-c-string"},
             {"tenant", "table"},
             {"table", "custom"}
         };
-        await h.InitAsync(componentMetadata);
+        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>(),componentMetadata);
 
         var operationMetadata = new Dictionary<string, string>();
         operationMetadata.Add("tenantId", "123");
