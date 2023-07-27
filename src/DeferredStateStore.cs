@@ -3,7 +3,7 @@ using Dapr.PluggableComponents;
 using Dapr.PluggableComponents.Components.StateStore;
 using Dapr.PluggableComponents.Components;
 
-internal sealed record DeferredContext(MetadataRequest? MetadataRequest, IServiceProvider ServiceProvider, string InstanceId, TaskCompletionSource AllowInitToComplete);
+internal sealed record DeferredContext(MetadataRequest? MetadataRequest, IServiceProvider ServiceProvider, string InstanceId);
 
 internal static class DaprPluggableComponentsServiceBuilderExtensions
 {
@@ -21,7 +21,6 @@ internal sealed class DeferredStateStore<T> : IStateStore, IPluggableComponentFe
     private T stateStore;
     private readonly IServiceProvider serviceProvider;
     private readonly string instanceId;
-    private readonly TaskCompletionSource allowInitToComplete;
 
     public DeferredStateStore(IServiceProvider serviceProvider, Func<DeferredContext, Task<T>> componentFactory, string instanceId)
     {
@@ -44,7 +43,7 @@ internal sealed class DeferredStateStore<T> : IStateStore, IPluggableComponentFe
 
     public async Task InitAsync(MetadataRequest request, CancellationToken cancellationToken = default)
     {
-        this.stateStore = await this.componentFactory(new DeferredContext(request, serviceProvider, instanceId, allowInitToComplete));
+        this.stateStore = await this.componentFactory(new DeferredContext(request, serviceProvider, instanceId));
 
         return;
     }
