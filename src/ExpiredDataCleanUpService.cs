@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 
 public class ExpiredDataCleanUpService : BackgroundService
 {
-    private ConcurrentDictionary<string, Tuple<string, TaskCompletionSource>> _registeredComponents;
+    private ConcurrentDictionary<string, string> _registeredComponents;
     private int _sequence = 0;
     private readonly ILogger<ExpiredDataCleanUpService> _logger;
     private bool _isMetadataTableEstablished = false;
@@ -12,12 +12,17 @@ public class ExpiredDataCleanUpService : BackgroundService
     public ExpiredDataCleanUpService(ILogger<ExpiredDataCleanUpService> logger)
     {
         _logger = logger;
-        _registeredComponents = new ConcurrentDictionary<string, Tuple<string,TaskCompletionSource>>();
+        _registeredComponents = new ConcurrentDictionary<string,string>();
     }
 
-    public void TryRegisterStateStore(string instanceId, string connectionString, TaskCompletionSource allowInit)
+    public async Task TryRegisterStateStoreAsync(string instanceId, string connectionString)
     {
-        _registeredComponents.TryAdd(instanceId, new Tuple<string,TaskCompletionSource>(connectionString, allowInit));
+        var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();  
+        await CreateTenantMetadataTableIfNotExistsAsync(connection);
+        await connection.CloseAsync();   
+
+        _registeredComponents.TryAdd(instanceId, connectionString);
     }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -60,30 +65,11 @@ public class ExpiredDataCleanUpService : BackgroundService
             _logger.LogDebug($"component '{component.Key}' connnection string : '{component.Value}. Seq: {_sequence}'");  
         }
 
-        // create the pluggable metadata tables, and complete any registrations
-        foreach(var component in _registeredComponents)
-        {
-            if (component.Value.Item2.Task.Status == TaskStatus.WaitingForActivation)
-            {   
-                // create the pluggable metadata table
-                var connection = new NpgsqlConnection(component.Value.Item1);
-                await connection.OpenAsync();  
-                await CreateTenantMetadataTableIfNotExistsAsync(connection);
-                await connection.CloseAsync();   
-
-                // Tell the pluggable component to complete its registration Registration
-                component.Value.Item2.SetResult();
-            }
-        }
-
         // now perform the TTL sweep
         foreach(var component in _registeredComponents)
         {
-            var connection = new NpgsqlConnection(component.Value.Item1);
-            await connection.OpenAsync();  
-
-            if (component.Value.Item2.Task.Status != TaskStatus.RanToCompletion)
-                continue;
+            var connection = new NpgsqlConnection(component.Value);
+            await connection.OpenAsync();
 
             var tenantIdsToDelete = new List<string>();
             string tenantsToCheckForTTLdeletion = 

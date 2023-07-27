@@ -18,7 +18,7 @@ app.RegisterService(
     serviceBuilder =>
     {
         serviceBuilder.RegisterDeferredStateStore(
-            context =>
+            async context =>
             {
                 if (context.MetadataRequest is null)
                     throw new InvalidOperationException("MetadataRequest is not set");
@@ -30,7 +30,7 @@ app.RegisterService(
                 if (!context.MetadataRequest.Properties.TryGetValue(CONNECTION_STRING_KEYWORD, out string connectionString))
                     throw new Exception($"Mandatory '{CONNECTION_STRING_KEYWORD}' metadata property not specified'");
                 
-                expiredDataCleanUpService.TryRegisterStateStore(context.InstanceId, connectionString, context.AllowInitToComplete);
+                await expiredDataCleanUpService.TryRegisterStateStoreAsync(context.InstanceId, connectionString);
                 
                 return new StateStoreService(context.InstanceId, logger, helper);
             });
