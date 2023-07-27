@@ -11,13 +11,10 @@
 // limitations under the License.
 // ------------------------------------------------------------------------
 
-using Google.Protobuf;
-using Grpc.Core;
 using Helpers;
 using Npgsql;
 using Dapr.PluggableComponents.Components;
 using Dapr.PluggableComponents.Components.StateStore;
-using Google.Rpc;
 
 namespace DaprComponents.Services;
 
@@ -35,6 +32,20 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
 
     }
 
+    public async Task InitAsync(MetadataRequest request, CancellationToken cancellationToken = default)
+    {
+        return;
+    }
+
+    public async Task<string[]> GetFeaturesAsync(CancellationToken cancellationToken = default)
+    {
+        using (_logger.BeginNamedScope("GetFeatures", ( "DaprInstanceId", _instanceId)))
+        {
+            string[] features = { "ETAG", "TRANSACTIONAL" };
+            _logger.LogInformation($"Registering State Store Features : {string.Join(",", features)}");
+            return features;
+        }
+    }
 
     public async Task DeleteAsync(StateStoreDeleteRequest request, CancellationToken cancellationToken = default)
     {
@@ -60,29 +71,6 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
         return;
     }
 
-    private static async Task ThrowGrpcException(string message)
-    {
-        var badRequest = new BadRequest();
-        var des = message;
-        badRequest.FieldViolations.Add(    
-        new Google.Rpc.BadRequest.Types.FieldViolation
-            {        
-                Field = message,
-                Description = des
-            });
-
-        var baseStatusCode = Grpc.Core.StatusCode.FailedPrecondition;
-        var status = new Google.Rpc.Status{    
-        Code = (int)baseStatusCode
-        };
-
-        status.Details.Add(Google.Protobuf.WellKnownTypes.Any.Pack(badRequest));
-
-        var metadata = new Metadata();
-        metadata.Add("grpc-status-details-bin", status.ToByteArray());
-        throw new RpcException(new Grpc.Core.Status(baseStatusCode, message), metadata);
-    }
-
     public async Task<StateStoreGetResponse?> GetAsync(StateStoreGetRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation($"{nameof(GetAsync)}");
@@ -102,7 +90,8 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
             } 
             catch(StateStoreInitHelperException ex) when (ex.Message.StartsWith("Missing Tenant Id"))
             {
-                await ThrowGrpcException(ex.Message);
+                // TODO : This needs turning into a meaningful error to the client, but it is currently not possible
+                throw ex;
             }
             catch(PostgresException ex) when (ex.TableDoesNotExist())
             {
@@ -111,30 +100,6 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
 
             _logger.LogDebug($"{nameof(GetAsync)} - State not found with key : [{request.Key}]");
             return new StateStoreGetResponse();            
-        }
-    }
-
-    public async Task<string[]> GetFeaturesAsync(CancellationToken cancellationToken = default)
-    {
-        using (_logger.BeginNamedScope("GetFeatures", ( "DaprInstanceId", _instanceId)))
-        {
-            string[] features = { "ETAG", "TRANSACTIONAL" };
-            _logger.LogInformation($"Registering State Store Features : {string.Join(",", features)}");
-            return features;
-        }
-    }
-
-    public async Task InitAsync(MetadataRequest request, CancellationToken cancellationToken = default)
-    {
-        return;
-    }
-
-    public async Task PingAsync(CancellationToken cancellationToken = default)
-    {
-        using (_logger.BeginNamedScope("Ping", ( "DaprInstanceId", _instanceId)))
-        {
-            _logger.LogInformation("Pinging postgres...");
-            await _stateStoreInitHelper.PerformDatabaseProbeAsync();
         }
     }
 
@@ -208,6 +173,15 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
                 _logger.LogError(ex, $"{nameof(TransactAsync)} - Rollback");
                 throw;
             } 
+        }
+    }
+
+    public async Task PingAsync(CancellationToken cancellationToken = default)
+    {
+        using (_logger.BeginNamedScope("Ping", ( "DaprInstanceId", _instanceId)))
+        {
+            _logger.LogInformation("Pinging postgres...");
+            await _stateStoreInitHelper.PerformDatabaseProbeAsync();
         }
     }
 }
