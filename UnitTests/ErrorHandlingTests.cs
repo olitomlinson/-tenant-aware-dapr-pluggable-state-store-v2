@@ -11,20 +11,6 @@ namespace Tests;
 public class ErrorHandlingTests
 {
     [TestMethod]
-    [ExpectedException(typeof(InvalidOperationException),
-    "Call 'InitAsync' firs")]
-    public async Task MustCallInitBeforeUsingTheDatabaseHelper()
-    {
-        var pgsqlFactory = Substitute.For<IPgsqlFactory>();
-        var h = new StateStoreInitHelper(pgsqlFactory, Substitute.For<ILogger>());
-
-        var operationMetadata = new Dictionary<string,string>();
-        
-        h.TenantAwareDatabaseFactory?.Invoke(operationMetadata, null);
-        Assert.Fail();
-    }
-
-    [TestMethod]
     [ExpectedException(typeof(StateStoreInitHelperException),
     "Mandatory component metadata property 'connectionString' is not set")]
     public async Task ConnectionStringIsNotSpecified()
