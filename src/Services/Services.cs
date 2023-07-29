@@ -18,7 +18,7 @@ using Dapr.PluggableComponents.Components.StateStore;
 
 namespace DaprComponents.Services;
 
-public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITransactionalStateStore, IPluggableComponentLiveness
+public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITransactionalStateStore
 {
     private readonly string _instanceId;
     private readonly ILogger<StateStoreService> _logger;
@@ -166,15 +166,6 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
                 _logger.LogError(ex, $"{nameof(TransactAsync)} - Rollback");
                 throw;
             } 
-        }
-    }
-
-    public async Task PingAsync(CancellationToken cancellationToken = default)
-    {
-        using (_logger.BeginNamedScope("Ping", ( "DaprInstanceId", _instanceId)))
-        {
-            _logger.LogInformation("Pinging postgres...");
-            await _stateStoreInitHelper.PerformDatabaseProbeAsync();
         }
     }
 
