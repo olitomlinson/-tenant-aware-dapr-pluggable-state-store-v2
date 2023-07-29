@@ -128,13 +128,6 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
         return;
     }
 
-    private int GetTTLfromOperationMetadata(IReadOnlyDictionary<string,string> metadata)
-    {
-        if (metadata.TryGetValue("ttlInSeconds", out string ttl))
-            return Convert.ToInt32(ttl);
-        return 0;
-    }
-
     public async Task TransactAsync(StateStoreTransactRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation($"{nameof(TransactAsync)} - Set/Delete");
@@ -151,17 +144,17 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
                 foreach(var op in request.Operations)
                 {
                     await op.Visit(
-                        onDeleteRequest: async (x) => {
-                            var db = dbfactory(x.Metadata);
-                            await db.DeleteAsync(x.Key, x.ETag ?? String.Empty, tran);
+                        onDeleteRequest: async (delete) => {
+                            var db = dbfactory(delete.Metadata);
+                            await db.DeleteAsync(delete.Key, delete.ETag ?? String.Empty, tran);
                         },
-                        onSetRequest: async (x) => {     
-                            var db = dbfactory(x.Metadata);
+                        onSetRequest: async (set) => {     
+                            var db = dbfactory(set.Metadata);
                             // TODO : Need to implement 'something' here with regards to 'isBinary',
                             // but I do not know what this is trying to achieve. See existing pgSQL built-in component 
                             // https://github.com/dapr/components-contrib/blob/d3662118105a1d8926f0d7b598c8b19cd9dc1ccf/state/postgresql/postgresdbaccess.go#L135
-                            var value = System.Text.Encoding.UTF8.GetString(x.Value.Span);
-                            await db.UpsertAsync(x.Key, value, x.ETag ?? String.Empty, GetTTLfromOperationMetadata(request.Metadata), tran); 
+                            var value = System.Text.Encoding.UTF8.GetString(set.Value.Span);
+                            await db.UpsertAsync(set.Key, value, set.ETag ?? String.Empty, GetTTLfromOperationMetadata(request.Metadata), tran); 
                         }
                     );
                 }
@@ -183,6 +176,13 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
             _logger.LogInformation("Pinging postgres...");
             await _stateStoreInitHelper.PerformDatabaseProbeAsync();
         }
+    }
+
+    private int GetTTLfromOperationMetadata(IReadOnlyDictionary<string,string> metadata)
+    {
+        if (metadata.TryGetValue("ttlInSeconds", out string ttl))
+            return Convert.ToInt32(ttl);
+        return 0;
     }
 }
 
