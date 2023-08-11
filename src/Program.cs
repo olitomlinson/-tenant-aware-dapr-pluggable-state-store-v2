@@ -24,15 +24,17 @@ app.RegisterService(
                     throw new InvalidOperationException("MetadataRequest is not set");
 
                 var logger = context.ServiceProvider.GetRequiredService<ILogger<StateStoreService>>();
-                var helper = new StateStoreInitHelper(new PgsqlFactory(logger), logger, context.MetadataRequest.Properties );
+        
                 var expiredDataCleanUpService = context.ServiceProvider.GetRequiredService<ExpiredDataCleanUpService>();
                 
                 if (!context.MetadataRequest.Properties.TryGetValue(CONNECTION_STRING_KEYWORD, out string connectionString))
                     throw new Exception($"Mandatory '{CONNECTION_STRING_KEYWORD}' metadata property not specified'");
                 
                 await expiredDataCleanUpService.TryRegisterStateStoreAsync(context.InstanceId, connectionString);
+                var helper = new StateStoreInitHelper(new PgsqlFactory(logger), logger, context.MetadataRequest.Properties );
+                var dbfactory = helper.GetDbFactory;
                 
-                return new StateStoreService(context.InstanceId, logger, helper);
+                return new StateStoreService(context.InstanceId, logger, dbfactory);
             });
     });
 app.Run();

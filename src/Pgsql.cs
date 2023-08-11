@@ -177,35 +177,53 @@ namespace Helpers
 
         public async Task UpsertAsync(string key, string value, string etag, int ttl, NpgsqlTransaction transaction = null)
         {
-            await EnsureDatabaseResourcesExistAsync(transaction);
-            await InsertOrUpdateAsync(key, value, etag, ttl, transaction);
+            await EnsureDatabaseResourcesExistAsync(
+                transaction, 
+                onDatabaseResourcesExist: async () => {
+                    await InsertOrUpdateAsync(key, value, etag, ttl, transaction);
+                }
+            );
         }
 
-        private async Task EnsureDatabaseResourcesExistAsync(NpgsqlTransaction transaction = null)
+        private async Task EnsureDatabaseResourcesExistAsync(NpgsqlTransaction transaction, Func<Task> onDatabaseResourcesExist)
         {
-            // TODO : look at options for moving 'CreateTenantMetadataTableIfNotExistsAsync' into the Background Service, rather than doing it on demand.
-            //await GateAccessToResourceCreationAsync("tenant_metadata", () => CreateTenantMetadataTableIfNotExistsAsync(transaction));
-            
-            await GateAccessToResourceCreationAsync($"S:{_schema}", () => CreateSchemaIfNotExistsAsync(transaction));
-            await GateAccessToResourceCreationAsync($"T:{_schema}-{_table}", () => CreateTableIfNotExistsAsync(transaction));
+            var removeResourcesFromCache =  new []{ 
+                await GateAccessToResourceCreationAsync($"S:{_schema}", () => CreateSchemaIfNotExistsAsync(transaction)), 
+                await GateAccessToResourceCreationAsync($"T:{_schema}-{_table}", () => CreateTableIfNotExistsAsync(transaction))
+            };    
+
+            // It's possible for the local resource cache to become unsyncronised. One example is if a record can't be inserted into a brand new tenant, 
+            // the transaction will fail, and the new schema/table will be rolledback, however the cache (resourceLedger) will still think the schema/table are created.
+            // To avoid this, if any db exception occurs, we remove that schema/table from resourceLedger cache, so that the next operation for that schema/tenant
+            // will be offered the opportunity to create the schema/table if it does not exist in the db.
+            try 
+            {
+                await onDatabaseResourcesExist();
+            }
+            catch(PostgresException ex) when (ex.TableDoesNotExist())
+            {
+                foreach(var action in removeResourcesFromCache)
+                    action();
+                throw ex;
+            } 
         }
 
-        private async Task GateAccessToResourceCreationAsync(string resourceName, Func<Task> resourceFactory)
+        private async Task<Action> GateAccessToResourceCreationAsync(string resourceName, Func<Task> resourceFactory)
         {
             // check the in-memory ledger to see if the resource has already been created
             // (remember that this ledger is not global, it's per pluggable component instance (think pod instance)!)
             if (_resourcesLedger.TryGetValue(resourceName, out string _)) 
-                return; 
+                return () => _resourcesLedger.TryRemove(new KeyValuePair<string, string>(resourceName,""));
              
             // get the lock for this particular resource
-            var _lock = _locks.GetOrAdd(resourceName, (x) => { return new Object(); });
+            var _lock = _locks.GetOrAdd(resourceName, (x) => { return new (); });
 
             // wait patiently until we have exlusive access of the resource...
             lock (_lock) 
             {
                 // check ledger again to make sure the resource hasn't been created by some other racing thread...
                 if (_resourcesLedger.TryGetValue(resourceName, out string _)) 
-                    return;
+                    return () => _resourcesLedger.TryRemove(new KeyValuePair<string, string>(resourceName,""));
                 
                 // resource doesn't exist, no other thread has exlusive access, so create it now...
                 resourceFactory().Wait();
@@ -213,9 +231,11 @@ namespace Helpers
                 // while we have exlusive write-access, update the ledger to show it has been created
                 _resourcesLedger.TryAdd(resourceName, DateTime.UtcNow.ToString());
             } 
+
+            return () => _resourcesLedger.TryRemove(new KeyValuePair<string, string>(resourceName,""));
         }
 
-        public async Task InsertOrUpdateAsync(string key, string value, string etag, int ttlInSeconds = 0, NpgsqlTransaction transaction = null)
+        private async Task InsertOrUpdateAsync(string key, string value, string etag, int ttlInSeconds = 0, NpgsqlTransaction transaction = null)
         {
             int rowsAffected = 0;  
             var correlationId = Guid.NewGuid().ToString("N").Substring(23);

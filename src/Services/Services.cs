@@ -22,14 +22,13 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
 {
     private readonly string _instanceId;
     private readonly ILogger<StateStoreService> _logger;
-    private StateStoreInitHelper _stateStoreInitHelper;
+    private Func<Task<(Func<IReadOnlyDictionary<string,string>, Pgsql>, NpgsqlConnection)>> _getDbFactoryAndConnection;
 
-    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, StateStoreInitHelper stateStoreInitHelper)
+    public StateStoreService(string instanceId, ILogger<StateStoreService> logger, Func<Task<(Func<IReadOnlyDictionary<string,string>, Pgsql>, NpgsqlConnection)>> dbfactory)
     {
         _instanceId = instanceId;
         _logger = logger;
-        _stateStoreInitHelper = stateStoreInitHelper;
-
+        _getDbFactoryAndConnection = dbfactory;
     }
 
     public async Task InitAsync(MetadataRequest request, CancellationToken cancellationToken = default)
@@ -51,21 +50,21 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
     {
          _logger.LogInformation($"{nameof(DeleteAsync)}");
         
-        (var dbfactory, var conn) = await _stateStoreInitHelper.GetDbFactory();
-        using (conn)
+        (var f, var c) = await _getDbFactoryAndConnection();
+        using (c)
         {
-            var tran = await conn.BeginTransactionAsync();
+            var t = await c.BeginTransactionAsync();
             try 
             {
-                await dbfactory(request.Metadata).DeleteAsync(request.Key, request.ETag ?? String.Empty, tran);
+                await f(request.Metadata).DeleteAsync(request.Key, request.ETag ?? String.Empty, t);
             }
             catch(Exception ex)
             {   
-                await tran.RollbackAsync();
+                await t.RollbackAsync();
                 _logger.LogDebug($"{nameof(DeleteAsync)} - rolled back transaction");
                 throw;
             }
-            await tran.CommitAsync();
+            await t.CommitAsync();
             _logger.LogDebug($"{nameof(DeleteAsync)} - transaction commited");
         }
         return;
@@ -75,12 +74,12 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
     {
         _logger.LogInformation($"{nameof(GetAsync)}");
 
-        (var dbfactory, var conn) = await _stateStoreInitHelper.GetDbFactory();
-        using (conn)
+        (var f, var c) = await _getDbFactoryAndConnection();
+        using (c)
         {
             try 
             {
-                var (value, etag) = await dbfactory(request.Metadata).GetAsync(request.Key);              
+                var (value, etag) = await f(request.Metadata).GetAsync(request.Key);              
                 if (value != null)
                     return new StateStoreGetResponse
                     {
@@ -107,20 +106,26 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
     {
         _logger.LogInformation($"{nameof(SetAsync)}");
                 
-        (var dbfactory, var conn) = await _stateStoreInitHelper.GetDbFactory();
-        using (conn)
+        (var f, var c) = await _getDbFactoryAndConnection();
+        using (c)
         {
-            NpgsqlTransaction tran = null;
+            NpgsqlTransaction t = null;
             try
             {
-                tran = await conn.BeginTransactionAsync();
+                t = await c.BeginTransactionAsync();
                 var value = System.Text.Encoding.UTF8.GetString(request.Value.Span);
-                await dbfactory(request.Metadata).UpsertAsync(request.Key, value, request.ETag ?? String.Empty, GetTTLfromOperationMetadata(request.Metadata), tran);   
-                await tran.CommitAsync();
+                await f(request.Metadata).UpsertAsync(request.Key, value, request.ETag ?? String.Empty, GetTTLfromOperationMetadata(request.Metadata), t);   
+                await t.CommitAsync();
+            }
+            catch(PostgresException pgex) when (pgex.TableDoesNotExist())
+            {
+                await t.RollbackAsync();
+                _logger.LogError(pgex, $"{nameof(SetAsync)} - Rollback");
+                throw;
             }
             catch(Exception ex)
             {
-                await tran.RollbackAsync();
+                await t.RollbackAsync();
                 _logger.LogError(ex, $"{nameof(SetAsync)} - Rollback");
                 throw;
             }
@@ -135,34 +140,34 @@ public class StateStoreService : IStateStore, IPluggableComponentFeatures,  ITra
         if (!request.Operations.Any())
             return;
 
-        (var dbfactory, var conn) = await _stateStoreInitHelper.GetDbFactory();
-        using (conn)
+        (var f, var c) = await _getDbFactoryAndConnection();
+        using (c)
         {
-            var tran = await conn.BeginTransactionAsync();
+            var t = await c.BeginTransactionAsync();
             try 
             {
                 foreach(var op in request.Operations)
                 {
                     await op.Visit(
                         onDeleteRequest: async (delete) => {
-                            var db = dbfactory(delete.Metadata);
-                            await db.DeleteAsync(delete.Key, delete.ETag ?? String.Empty, tran);
+                            var db = f(delete.Metadata);
+                            await db.DeleteAsync(delete.Key, delete.ETag ?? String.Empty, t);
                         },
                         onSetRequest: async (set) => {     
-                            var db = dbfactory(set.Metadata);
+                            var db = f(set.Metadata);
                             // TODO : Need to implement 'something' here with regards to 'isBinary',
                             // but I do not know what this is trying to achieve. See existing pgSQL built-in component 
                             // https://github.com/dapr/components-contrib/blob/d3662118105a1d8926f0d7b598c8b19cd9dc1ccf/state/postgresql/postgresdbaccess.go#L135
                             var value = System.Text.Encoding.UTF8.GetString(set.Value.Span);
-                            await db.UpsertAsync(set.Key, value, set.ETag ?? String.Empty, GetTTLfromOperationMetadata(request.Metadata), tran); 
+                            await db.UpsertAsync(set.Key, value, set.ETag ?? String.Empty, GetTTLfromOperationMetadata(request.Metadata), t); 
                         }
                     );
                 }
-                await tran.CommitAsync();
+                await t.CommitAsync();
             }
             catch(Exception ex)
             {
-                await tran.RollbackAsync();
+                await t.RollbackAsync();
                 _logger.LogError(ex, $"{nameof(TransactAsync)} - Rollback");
                 throw;
             } 

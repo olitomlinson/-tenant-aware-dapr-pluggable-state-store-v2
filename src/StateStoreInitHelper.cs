@@ -14,7 +14,6 @@ namespace Helpers
         private IPgsqlFactory _pgsqlFactory;
         private ILogger _logger;
         public Func<IReadOnlyDictionary<string, string>, NpgsqlConnection, Pgsql>? TenantAwareDatabaseFactory { get; private set; }
-
         private string _connectionString;
 
         public StateStoreInitHelper(IPgsqlFactory pgsqlFactory, ILogger logger, IReadOnlyDictionary<string,string> componentMetadataProperties){
