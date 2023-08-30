@@ -11,18 +11,20 @@
             }
         },
         {
-            "name": ".NET Core Attach",
+            "name": "Debug .NET",
             "type": "coreclr",
-            "request": "attach"
-        },
-        {
-            "name": "Docker .NET Launch",
-            "type": "docker",
             "request": "launch",
-            "preLaunchTask": "docker-run: debug",
-            "netCore": {
-                "appProject": "${workspaceFolder}/src/Component.csproj"
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/bin/Debug/net6.0/Component.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "sourceFileMap": {
+                "/Views": "${workspaceFolder}/Views"
             }
-        }
+        },
     ]
 }
