@@ -25,7 +25,7 @@ Tenant-aware state operations requires a client to specify a `tenantId` as part 
 ### To do
 
 - Implement a native `BulkGet` and `BulkSet`
-- Support `IsBinary` - Blocked by https://github.com/dapr/components-contrib/issues/2773"
+- Support `IsBinary` - Blocked by https://github.com/dapr/dapr/pull/6244"
 - ~~Look again at `XMIN` for Etag~~
 - Review Indexes (particulary around `key` and `etag`)
 
@@ -162,6 +162,6 @@ The integration tests use [TestContainers](https://dotnet.testcontainers.org/) t
 
 _Note:_ these tests can take a while to complete on the first run through as Images are built & downloaded.
 
-Navigate to the `\tests\integration\` folder : 
+Navigate to the `IntegrationTests` folder : 
 
 ` dotnet test`

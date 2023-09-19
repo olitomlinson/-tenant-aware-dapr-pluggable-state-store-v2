@@ -45,7 +45,7 @@ public sealed class TestContainers : IAsyncLifetime
         _socketVolume = new VolumeBuilder().Build();
 
         _daprContainer = new ContainerBuilder()
-            .WithImage("daprio/daprd:1.11.2-mariner")
+            .WithImage("daprio/daprd:1.12.0-rc.2-mariner")
             .WithName($"dapr-{containerSuffix}")
             .WithNetwork(_network)
             .WithNetworkAliases("dapr")
