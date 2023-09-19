@@ -25,7 +25,7 @@ public sealed class TestContainers : IAsyncLifetime
 
     public TestContainers()
     {
-        var daprComponentsDirectory = $"{Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)}/DaprComponents";
+        var daprComponentsDirectory = new DirectoryInfo(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + "/DaprComponents/.");
 
         var containerSuffix = Guid.NewGuid().ToString("N").Substring(23);
         _dapr_app_id = $"pluggableapp-{containerSuffix}";
@@ -52,9 +52,7 @@ public sealed class TestContainers : IAsyncLifetime
             .WithPortBinding(_dapr_http_port, true)
             .WithPortBinding(_dapr_grpc_port, true)
             .WithVolumeMount(_socketVolume, "/tmp/dapr-components-sockets")
-            .WithResourceMapping($"{daprComponentsDirectory}/pluggable-postgres-table.yaml", "/DaprComponents/pluggable-postgres-table.yaml")
-            .WithResourceMapping($"{daprComponentsDirectory}/pluggable-postgres-schema.yaml", "/DaprComponents/pluggable-postgres-schema.yaml")
-            .WithResourceMapping($"{daprComponentsDirectory}/standard-postgres.yaml", "/DaprComponents/standard-postgres.yaml")
+            .WithResourceMapping(daprComponentsDirectory, "/DaprComponents/")
             .WithEntrypoint("./daprd")
             .WithCommand("-app-id", _dapr_app_id)
             .WithCommand("-dapr-http-port", _dapr_http_port.ToString())
