@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   db:
     image: postgres:15.2-alpine
@@ -23,7 +22,7 @@ services:
     depends_on:
       - db
   pluggableapp-dapr:
-    image: "daprio/daprd:1.12.0-rc.2-mariner"
+    image: "daprio/daprd:1.12.2-mariner"
     deploy:
       restart_policy:
         condition: on-failure

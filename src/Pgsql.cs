@@ -187,6 +187,10 @@ namespace Helpers
 
         private async Task EnsureDatabaseResourcesExistAsync(NpgsqlTransaction transaction, Func<Task> onDatabaseResourcesExist)
         {
+            // `GateAccessToResourceCreationAsync` uses locks to ensure that the same postgres object (table or schema) won't be created
+            // concurrently. In my testing IF NOT EXISTS Table/schema creation is eventual, so IF THEN EXISTS is not concurrency-safe.
+            // `GateAccessToResourceCreationAsync` will return an action that can be used to delete any created resources if they need to be rolled back
+            
             var removeResourcesFromCache =  new []{ 
                 await GateAccessToResourceCreationAsync($"S:{_schema}", () => CreateSchemaIfNotExistsAsync(transaction)), 
                 await GateAccessToResourceCreationAsync($"T:{_schema}-{_table}", () => CreateTableIfNotExistsAsync(transaction))
