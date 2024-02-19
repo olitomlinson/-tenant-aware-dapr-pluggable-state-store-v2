@@ -8,3 +8,5 @@ spec:
   metadata:
   - name: connectionString
     value: "host=db user=postgres password=postgres port=5432 database=postgres"
+  - name: tableName
+    value: v1_state

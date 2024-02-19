@@ -1,0 +1,16 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: standard-postgres-v2
+spec:
+  type: state.postgresql
+  # Note: setting "version" to "v2" is required to use the v2 of the component
+  version: v2
+  metadata:
+    # Connection string
+  - name: connectionString
+    value: "host=db user=postgres password=postgres port=5432 database=postgres"
+  - name: tablePrefix
+    value: v2_state
+  - name: metadataTableName
+    value: v2_metadata

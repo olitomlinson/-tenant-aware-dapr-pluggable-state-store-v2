@@ -1,4 +1,5 @@
 ﻿using Dapr.Client;
+using Microsoft.Extensions.ObjectPool;
 using Xunit.Abstractions;
 
 namespace IntegrationTests;
@@ -9,20 +10,43 @@ public class StateIsolationTests : IClassFixture<TestContainers>
     private readonly TestContainers _testContainers;
     private readonly DaprClient _daprClient;
     private Func<string> GetRandomKey;
-    private static string _pluggableStoreTable = "pluggable-postgres-table";
-    private static string _pluggableStoreSchema = "pluggable-postgres-schema";
-    private static string _InTreeStore = "standard-postgres";
     private Random _random = new Random();
 
-    public static IEnumerable<object[]> AllStores(){
-        foreach(var store in OnlyTenantStores())
-            yield return store;
-        yield return new object[] { _InTreeStore };
+    public static IEnumerable<object[]> AllStores{
+        get {
+            foreach(var store in AllStoresWithoutPostgresV2)
+                yield return store;
+            foreach(var store in PostgresV2)
+                yield return store;
+        }
     }
 
-    public static IEnumerable<object[]> OnlyTenantStores(){
-        yield return new object[] { _pluggableStoreTable };
-        yield return new object[] { _pluggableStoreSchema };
+    public static IEnumerable<object[]> AllStoresWithoutPostgresV2
+    {
+        get {
+            foreach(var store in OnlyTenantStores)
+                yield return store;
+            foreach(var store in PostgresV1)
+                yield return store;
+        }
+    }
+
+    public static IEnumerable<object[]> OnlyTenantStores
+    {
+        get {
+            yield return new object[] { "pluggable-postgres-table" };
+            yield return new object[] { "pluggable-postgres-schema" };
+        }
+    }
+
+    public static IEnumerable<object[]> PostgresV1
+    {
+        get { yield return new object[] { "standard-postgres" }; }
+    }
+
+    public static IEnumerable<object[]> PostgresV2
+    {
+        get { yield return new object[] { "standard-postgres-v2" }; }
     }
 
     public StateIsolationTests(TestContainers testContainers, ITestOutputHelper output)
@@ -167,7 +191,7 @@ public class StateIsolationTests : IClassFixture<TestContainers>
     }
 
     [Theory]
-    [MemberData(nameof(AllStores))]
+    [MemberData(nameof(AllStoresWithoutPostgresV2))]
     public async Task UpdatesAndEtagInvalidIsThrown(string store)
     {
         var key = GetRandomKey();
@@ -183,6 +207,25 @@ public class StateIsolationTests : IClassFixture<TestContainers>
         await Assert.ThrowsAsync<Dapr.DaprException>(async () => { 
             await _daprClient.TrySaveStateAsync<string>(store, key, updatedValue, malformedEtag, metadata: tenantId.AsMetaData(), cancellationToken: new CancellationTokenSource(5000).Token); });
     }
+
+    [Theory]
+    [MemberData(nameof(PostgresV2))]
+    public async Task PostgresV2_UpdatesAndEtagIsMismatched(string store)
+    {
+        var key = GetRandomKey();
+        var seedValue = "Chicken";
+        var tenantId = Guid.NewGuid().ToString();
+
+        await _daprClient.SaveStateAsync<string>(store, key, seedValue, metadata: tenantId.AsMetaData(), cancellationToken: new CancellationTokenSource(5000).Token);
+        var (firstGet, etag) = await _daprClient.GetStateAndETagAsync<string>(store, key, metadata: tenantId.AsMetaData(), cancellationToken: new CancellationTokenSource(5000).Token);
+
+        var updatedValue = "Egg";
+        var malformedEtag = $"not-a-valid-etag";
+
+        var result = await _daprClient.TrySaveStateAsync<string>(store, key, updatedValue, malformedEtag, metadata: tenantId.AsMetaData(), cancellationToken: new CancellationTokenSource(5000).Token); 
+        Assert.False(result);
+    }   
+
 
     [Theory]
     [MemberData(nameof(AllStores))]
